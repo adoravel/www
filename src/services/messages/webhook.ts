@@ -1,30 +1,40 @@
 // Copyright (c) 2025-2026 lívia
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { createRemoteClient, endpoint, remote, v } from "@july/snarl";
 import { log } from "@july/snarl/verbosity";
 import { readOptionalEnv } from "~/services/core/env.ts";
 import { PUBLIC_URL } from "~/services/auth/config.ts";
-import { describeError } from "~/services/core/errors.ts";
 import type { Print } from "./types.ts";
 import { SERVICE } from "./store.ts";
 
 const WEBHOOK_URL = readOptionalEnv("DISCORD_WEBHOOK_URL");
+
 const PROVIDER_COLOURS = {
 	discord: 0x5865f2,
 	bluesky: 0x1083fe,
 	lastfm: 0xd51007,
 } as const;
 
+const client = WEBHOOK_URL
+	? createRemoteClient(
+		remote(WEBHOOK_URL, {
+			notify: endpoint.post("", { input: v.any(), response: "none" }),
+		}),
+		{ timeout: 8_000 },
+	)
+	: undefined;
+
 function absolute(url: string): string {
 	return url.startsWith("/") ? `${PUBLIC_URL}${url}` : url;
 }
 
-export function webhookConfigured(): boolean {
-	return WEBHOOK_URL !== undefined;
+export function isWebhookConfigured(): boolean {
+	return client !== undefined;
 }
 
 export async function notifyPendingPrint(print: Print): Promise<void> {
-	if (!WEBHOOK_URL) {
+	if (!client) {
 		log.warn(SERVICE, "DISCORD_WEBHOOK_URL not set, print stays pending on disk only");
 		return;
 	}
@@ -56,20 +66,11 @@ export async function notifyPendingPrint(print: Print): Promise<void> {
 		content: `\`\`\`json\n${line}\n\`\`\``,
 	};
 
-	try {
-		const response = await fetch(WEBHOOK_URL, {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify(payload),
-		});
-		if (!response.ok) {
-			await response.body?.cancel();
-			log.warn(SERVICE, `webhook responded ${response.status} for print ${print.id}`);
-		}
-	} catch (error) {
+	const result = await client.notify.attempt(payload);
+	if (!result.ok) {
 		log.warn(
 			SERVICE,
-			`webhook delivery failed for print ${print.id}: ${describeError(error)}`,
+			`webhook delivery failed for print ${print.id}: ${result.error.message}`,
 		);
 	}
 }

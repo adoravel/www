@@ -41,7 +41,6 @@ export const routes = {
 	resume: "/resume",
 	resumePdf: "/resume.pdf",
 	writing: (slug: string) => `/writing/${slug}`,
-	messages: "/api/messages",
 	signOut: "/auth/signout",
 } as const;
 

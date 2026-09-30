@@ -12,13 +12,13 @@ export interface RgbaImage {
 	data: Uint8ClampedArray;
 }
 
-type Sharp = typeof import("sharp");
+type Sharp = typeof import("sharp").default;
 
 let loader: Promise<Sharp | null> | undefined;
 
 export function loadSharp(): Promise<Sharp | null> {
 	return loader ??= import("sharp")
-		.then((module) => module.default as unknown as Sharp)
+		.then((module) => module.default)
 		.catch((err) => {
 			log.warn(
 				SERVICE,

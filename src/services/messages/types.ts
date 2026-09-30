@@ -38,7 +38,3 @@ export interface Receipt {
 	characters: number;
 	image?: string;
 }
-
-export type SubmitResult =
-	| { ok: true; receipt: Receipt }
-	| { ok: false; reason: "invalid" | "too_long" | "unauthenticated" | "bad_image" };

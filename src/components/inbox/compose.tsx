@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { computed, css, isServer, signal } from "@404/aether";
+import { createClient, ServiceError } from "@july/snarl/service";
 import { ease, fontFamily, fontSize, media, radius, spacing, theme } from "~/tokens";
 import { play } from "~/sound/mod.ts";
 import AuthorAvatar, { PROVIDER_ICONS } from "~/components/inbox/author-avatar.tsx";
@@ -18,15 +19,12 @@ import {
 	PROVIDERS,
 	signInUrl,
 } from "~/components/inbox/identity.ts";
-import type {
-	Author,
-	AuthorProvider,
-	Print,
-	Receipt,
-} from "~/services/messages/types.ts";
+import type { api } from "~/services/messages/mod.ts";
+import type { Author, AuthorProvider, Print } from "~/services/messages/types.ts";
+
+const client: ReturnType<typeof createClient<typeof api>> = createClient<typeof api>();
 
 export interface ComposeProps {
-	endpoint: string;
 	signOutEndpoint: string;
 	returnTo: string;
 	limit: number;
@@ -40,8 +38,9 @@ type Phase = "idle" | "printing" | "printed" | "error";
 const ERRORS: Record<string, string> = {
 	invalid: "Write something first.",
 	signed_out: "Sign in with one of the buttons below to print.",
+	unauthorised: "Sign in with one of the buttons below to print.",
 	too_long: "That's a bit long for the printer.",
-	429: "The printer needs a break, try again in a few minutes.",
+	rate_limited: "The printer needs a break, try again in a few minutes.",
 	network: "Couldn't reach the printer, try again.",
 };
 
@@ -411,7 +410,7 @@ const Styled = css`
 `;
 
 export default function Compose(
-	{ endpoint, signOutEndpoint, returnTo, limit, locale, author, notice }: ComposeProps,
+	{ signOutEndpoint, returnTo, limit, locale, author, notice }: ComposeProps,
 ) {
 	if (isServer) printCardStyles.use();
 
@@ -447,8 +446,8 @@ export default function Compose(
 		location.assign(signInUrl(provider, returnTo, blueskyHandle.peek()));
 	}
 
-	function fail(reason: string): void {
-		error(ERRORS[reason] ?? ERRORS.network);
+	function fail(reason: string, message?: string): void {
+		error(message ?? ERRORS[reason] ?? ERRORS.network);
 		phase("error");
 	}
 
@@ -465,23 +464,11 @@ export default function Compose(
 		play("print");
 
 		try {
-			const response = await fetch(endpoint, {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({
-					body: text,
-					image,
-					website: website.peek(),
-				}),
+			const receipt = await client.messages({
+				body: text,
+				image,
+				website: website.peek(),
 			});
-			if (response.status === 429) return fail("429");
-
-			const result = await response.json() as
-				| { ok: true; receipt: Receipt }
-				| { ok: false; reason: string };
-			if (!result.ok) return fail(result.reason);
-
-			const { receipt } = result;
 			printed({
 				print: {
 					id: receipt.id,
@@ -494,7 +481,10 @@ export default function Compose(
 			});
 			phase("printed");
 			play("success");
-		} catch {
+		} catch (caught) {
+			if (caught instanceof ServiceError) {
+				return fail(caught.code, caught.code === "invalid" ? caught.message : undefined);
+			}
 			fail("network");
 		}
 	}

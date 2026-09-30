@@ -1,12 +1,11 @@
 // Copyright (c) 2025-2026 lívia
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { createRemoteClient, endpoint, remote, ServiceError, v } from "@july/snarl";
 import { readEnv } from "~/services/core/env.ts";
-import { ServiceError } from "~/services/core/errors.ts";
-import { buildUrl, fetchJson } from "~/services/core/http.ts";
-import { asList, type Guard } from "~/services/core/validate.ts";
+import { asList } from "~/services/core/validate.ts";
 import { site } from "~/config/site.ts";
-import { blurhashFor } from "~/services/media/blurhash.ts";
+import { blurhash } from "~/services/media/blurhash.ts";
 import { proxied } from "~/services/media/proxy.ts";
 import {
 	IMAGE_SIZES,
@@ -19,43 +18,29 @@ import {
 
 export const SERVICE = "last.fm";
 
-const API_URL = "https://ws.audioscrobbler.com/2.0/";
 const API_KEY = readEnv("LASTFM_API_KEY", "6ed42890522918c59b5459a65ece5818");
+const TIMEOUT_MS = 8_000;
 
-type Method = "user.getRecentTracks";
+const lastfmApi = remote("https://ws.audioscrobbler.com/2.0", {
+	recentTracks: endpoint.get("/", {
+		input: v({
+			method: v.literal("user.getRecentTracks"),
+			user: v.string(),
+			limit: v.number(),
+			extended: v.number(),
+			api_key: v.string(),
+			format: v.literal("json"),
+		}),
+		output: v.union(
+			v.guard(isErrorPayload, "last.fm api error"),
+			v.guard(isRecentTracksPayload, "unexpected recent tracks shape"),
+		),
+	}),
+});
 
-function isApiResponse<T>(guard: Guard<T>): Guard<T> {
-	return (value): value is T => {
-		if (isErrorPayload(value)) {
-			throw new ServiceError(
-				SERVICE,
-				"http",
-				`api error ${value.error}: ${value.message}`,
-			);
-		}
-		return guard(value);
-	};
-}
+const client = createRemoteClient(lastfmApi, { timeout: TIMEOUT_MS });
 
-async function call<T>(
-	method: Method,
-	params: Record<string, string | number>,
-	guard: Guard<T>,
-	signal?: AbortSignal,
-): Promise<T> {
-	if (!API_KEY) {
-		throw new ServiceError(SERVICE, "config", "LASTFM_API_KEY is not set");
-	}
-
-	return await fetchJson({
-		service: SERVICE,
-		url: buildUrl(API_URL, { ...params, method, api_key: API_KEY, format: "json" }),
-		guard: isApiResponse(guard),
-		signal,
-	});
-}
-
-function largestImage(images: LastFmImage[] | undefined): string | undefined {
+function getLargestImage(images: LastFmImage[] | undefined): string | undefined {
 	if (!images?.length) return undefined;
 
 	const ranked = [...images].sort(
@@ -64,7 +49,7 @@ function largestImage(images: LastFmImage[] | undefined): string | undefined {
 	return ranked.find((image) => image["#text"])?.["#text"];
 }
 
-function scrobbleTime(uts: string | undefined): string | undefined {
+function computeScrobbleTime(uts: string | undefined): string | undefined {
 	if (!uts) return undefined;
 	const seconds = Number(uts);
 	return Number.isFinite(seconds) ? new Date(seconds * 1000).toISOString() : undefined;
@@ -76,11 +61,11 @@ export function toSong(track: LastFmTrack): Song {
 		artist: track.artist.name,
 		album: track.album["#text"],
 		url: track.url,
-		coverUrl: largestImage(track.image),
+		coverUrl: getLargestImage(track.image),
 		loved: track.loved === "1",
 		playing: track["@attr"]?.nowplaying === "true",
 		plays: 1,
-		scrobbledAt: scrobbleTime(track.date?.uts),
+		scrobbledAt: computeScrobbleTime(track.date?.uts),
 	};
 }
 
@@ -88,25 +73,35 @@ export async function fetchRecentTracks(
 	limit: number,
 	signal?: AbortSignal,
 ): Promise<Song[]> {
-	const payload = await call(
-		"user.getRecentTracks",
-		{ user: site.lastfm.user, limit, extended: 1 },
-		isRecentTracksPayload,
-		signal,
-	);
+	if (!API_KEY) {
+		throw new ServiceError("internal", "LASTFM_API_KEY is not set");
+	}
+
+	const payload = await client.recentTracks({
+		method: "user.getRecentTracks",
+		user: site.lastfm.user,
+		limit,
+		extended: 1,
+		api_key: API_KEY,
+		format: "json",
+	}, { signal });
+
+	if (isErrorPayload(payload)) {
+		throw new ServiceError("internal", `api error ${payload.error}: ${payload.message}`);
+	}
 
 	const songs = collapseRepeats(asList(payload.recenttracks.track).map(toSong));
 	return await withCovers(songs, signal);
 }
 
-function songKey(song: Song): string {
+function computeSongKey(song: Song): string {
 	return song.url || `${song.artist}\u0000${song.title}`.toLowerCase();
 }
 
 export function collapseRepeats(songs: Song[]): Song[] {
 	const seen = new Map<string, Song>();
 	for (const song of songs) {
-		const key = songKey(song);
+		const key = computeSongKey(song);
 		const existing = seen.get(key);
 		if (existing) {
 			existing.plays += 1;
@@ -128,7 +123,7 @@ async function withCovers(songs: Song[], signal?: AbortSignal): Promise<Song[]> 
 		await Promise.all(
 			covers.map(async (url) =>
 				[url, {
-					blurhash: await blurhashFor(url, signal),
+					blurhash: await blurhash(url, signal),
 					local: await proxied(url, { size: COVER_SIZE, fit: "cover" }, signal),
 				}] as const
 			),

@@ -48,7 +48,7 @@ async function computeBlurhash(
 	return encode(image.data, image.width, image.height, COMPONENTS_X, COMPONENTS_Y);
 }
 
-export function blurhashFor(
+export function blurhash(
 	url: string,
 	signal?: AbortSignal,
 ): Promise<string | undefined> {

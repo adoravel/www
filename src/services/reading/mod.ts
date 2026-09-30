@@ -3,7 +3,7 @@
 
 import { readNumberEnv } from "~/services/core/env.ts";
 import { createPoller, type PolledResource } from "~/services/core/poller.ts";
-import { blurhashFor } from "~/services/media/blurhash.ts";
+import { blurhash } from "~/services/media/blurhash.ts";
 import { proxied } from "~/services/media/proxy.ts";
 import {
 	reading,
@@ -54,7 +54,7 @@ async function loadReading(signal: AbortSignal): Promise<ReadingItem[]> {
 				coverUrl: source
 					? await proxied(source, { size: COVER_SIZE }, signal)
 					: undefined,
-				coverBlurhash: source ? await blurhashFor(source, signal) : undefined,
+				coverBlurhash: source ? await blurhash(source, signal) : undefined,
 				note: entry.note,
 			};
 		}),

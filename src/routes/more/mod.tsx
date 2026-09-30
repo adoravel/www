@@ -63,7 +63,6 @@ export default async function More(ctx: Context) {
 
 			<Section title="Send me anything" needsJs>
 				<Compose
-					endpoint={routes.messages}
 					signOutEndpoint={routes.signOut}
 					returnTo={routes.more}
 					limit={MESSAGE_LIMIT}
