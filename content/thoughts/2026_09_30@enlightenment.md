@@ -21,7 +21,7 @@ localised tragedy that belongs strictly to its victims.
 
 this shallow understanding reduces deep material struggles down to mere etiquette.
 
-instead of analysing housing access, labuor exploitation, or institutional leverage,
+instead of analysing housing access, labour exploitation, or institutional leverage,
 people flatten sociology into a game of rules. moral gatekeepers obsess over policing
 vocabulary, treating a misused term as an irredeemable sin while ignoring the actual
 material conditions of the people involved. context? reclamation? historical intent?
