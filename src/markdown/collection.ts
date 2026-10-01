@@ -120,7 +120,7 @@ export function toSummary(document: MarkdownDocument): ThoughtSummary {
 export function createMarkdownCollection(
 	options: MarkdownCollectionOptions,
 ): MarkdownCollection {
-	const { dir, includeDrafts = !isProduction } = options;
+	const { dir, includeDrafts = true } = options;
 	const cache = new Map<string, CacheEntry>();
 
 	async function fileIndex(): Promise<Map<string, string>> {
