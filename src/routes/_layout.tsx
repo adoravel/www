@@ -247,7 +247,8 @@ const styles = css`
 	}
 
 	@media (pointer: fine) {
-		html, body {
+		html,
+		body {
 			scrollbar-color: ${theme.accentBorder} ${theme.base};
 		}
 	}
